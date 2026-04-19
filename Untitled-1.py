@@ -93,8 +93,8 @@ class Member:
 
     @member_id.setter
     def member_id(self, value):
-        if not value:
-            raise ValueError("Invalid ID")
+        if not re.match(r'^M\d+$', value):
+            raise ValueError("Member ID must be like M001")
         self._member_id = value
 
     @property
@@ -102,6 +102,8 @@ class Member:
         return self._borrowed_books.copy()
 
     def borrow_book(self, book):
+        if len(self._borrowed_books) >= 3:
+            raise Exception("Borrow limit reached")
         if not book.available:
             raise Exception("Book not available")
         book.borrow()
@@ -133,8 +135,11 @@ class Library:
         self._books[book.isbn] = book
 
     def remove_book(self, isbn):
-        if isbn not in self._books:
+        book = self._books.get(isbn)
+        if not book:
             raise Exception("Book not found")
+        if not book.available:
+            raise Exception("Cannot delete a borrowed book")
         del self._books[isbn]
 
     def add_member(self, member):
@@ -143,8 +148,11 @@ class Library:
         self._members[member.member_id] = member
 
     def remove_member(self, member_id):
-        if member_id not in self._members:
+        member = self._members.get(member_id)
+        if not member:
             raise Exception("Member not found")
+        if member.borrowed_books:
+            raise Exception("Member still has borrowed books")
         del self._members[member_id]
 
     def get_book(self, isbn):
