@@ -7,6 +7,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
+import re
 
 
 class Book:
@@ -42,9 +43,12 @@ class Book:
 
     @isbn.setter
     def isbn(self, value):
-        if not value:
+        if not isinstance(value, str) or not value.strip():
             raise ValueError("Invalid ISBN")
-        self._isbn = value
+        clean = value.strip().replace("-", "")
+        if not re.match(r'^\d{10}$|^\d{13}$', clean):
+            raise ValueError("ISBN must be 10 or 13 digits")
+        self._isbn = value.strip()
 
     @property
     def available(self):
@@ -373,30 +377,38 @@ class BorrowReturnDialog(tk.Toplevel):
         tk.Label(self, text="Select Member:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
         self.member_combo = ttk.Combobox(self, width=30, state="readonly")
         members = self.library.get_all_members()
+        self._member_list = members
         self.member_combo["values"] = [f"{m.name} ({m.member_id})" for m in members]
         self.member_combo.grid(row=0, column=1, padx=10, pady=10)
-        
+        self.member_combo.bind("<<ComboboxSelected>>", self._update_book_list)
+
         tk.Label(self, text="Select Book:").grid(row=1, column=0, padx=10, pady=10, sticky="e")
         self.book_combo = ttk.Combobox(self, width=30, state="readonly")
-        
         if self.is_borrow:
             books = [b for b in self.library.get_all_books() if b.available]
+            self.book_combo["values"] = [f"{b.title} ({b.isbn})" for b in books]
         else:
-            books = [b for b in self.library.get_all_books() if not b.available]
-        
-        self.book_combo["values"] = [f"{b.title} ({b.isbn})" for b in books]
+            self.book_combo["values"] = []
         self.book_combo.grid(row=1, column=1, padx=10, pady=10)
-        
+
         btn_frame = tk.Frame(self)
         btn_frame.grid(row=2, column=0, columnspan=2, pady=20)
-        
+
         action_text = "Borrow" if self.is_borrow else "Return"
         color = "#e74c3c" if self.is_borrow else "#27ae60"
-        
+
         tk.Button(btn_frame, text=action_text, command=self.process,
                  bg=color, fg="white", width=12).pack(side="left", padx=10)
         tk.Button(btn_frame, text="Cancel", command=self.cancel,
                  bg="#95a5a6", fg="white", width=12).pack(side="left", padx=10)
+
+    def _update_book_list(self, event=None):
+        if self.is_borrow:
+            return
+        idx = self.member_combo.current()
+        member = self._member_list[idx]
+        self.book_combo["values"] = [f"{b.title} ({b.isbn})" for b in member.borrowed_books]
+        self.book_combo.set("")
     
     def center_window(self):
         self.update_idletasks()
@@ -419,7 +431,10 @@ class BorrowReturnDialog(tk.Toplevel):
                                   "Please select both member and book.", parent=self)
             return
         
-        member_id = member_sel.split("(")[-1].rstrip(")")
+        
+        
+        idx = self.member_combo.current()
+        member_id = self._member_list[idx].member_id
         isbn = book_sel.split("(")[-1].rstrip(")")
         
         try:
@@ -461,17 +476,17 @@ class LibraryApp(tk.Tk):
     
     def _add_sample_data(self):
         try:
-            self.library.add_book(Book("1984", "George Orwell", "ISBN001"))
-            self.library.add_book(Book("To Kill a Mockingbird", "Harper Lee", "ISBN002"))
-            self.library.add_book(Book("The Great Gatsby", "F. Scott Fitzgerald", "ISBN003"))
-            self.library.add_book(Book("Pride and Prejudice", "Jane Austen", "ISBN004"))
-            self.library.add_book(Book("The Catcher in the Rye", "J.D. Salinger", "ISBN005"))
+            self.library.add_book(Book("1984", "George Orwell", "9780451524935"))
+            self.library.add_book(Book("To Kill a Mockingbird", "Harper Lee", "9780061935466"))
+            self.library.add_book(Book("The Great Gatsby", "F. Scott Fitzgerald", "9780743273565"))
+            self.library.add_book(Book("Pride and Prejudice", "Jane Austen", "9780141439518"))
+            self.library.add_book(Book("The Catcher in the Rye", "J.D. Salinger", "9780316769174"))
             
             self.library.add_member(Member("Alice Johnson", "M001"))
             self.library.add_member(Member("Bob Smith", "M002"))
             self.library.add_member(Member("Charlie Brown", "M003"))
-        except:
-            pass
+        except Exception as e:
+            print(f"Sample data error: {e}")
     
     def _create_menu(self):
         menubar = tk.Menu(self)
@@ -675,7 +690,7 @@ class LibraryApp(tk.Tk):
             messagebox.showinfo("No Selection", "Please select a book to edit.")
             return
         values = self.books_tree.item(selected[0])["values"]
-        isbn = values[2]
+        isbn = str(values[2])
         book = self.library.get_book(isbn)
         def on_save(title, author, isbn):
             book.title = title
@@ -691,7 +706,7 @@ class LibraryApp(tk.Tk):
             return
         values = self.books_tree.item(selected[0])["values"]
         title = values[0]
-        isbn = values[2]
+        isbn = str(values[2])
         if messagebox.askyesno("Confirm Delete", f"Delete '{title}'?"):
             try:
                 self.library.remove_book(isbn)
